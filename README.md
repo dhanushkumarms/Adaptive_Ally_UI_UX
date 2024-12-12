@@ -1,4 +1,4 @@
-![Adaptive Ally Cover](./cover.jpg)
+![Adaptive Ally Cover](./AA-prototype/cover.jpg)
 
 # Adaptive Ally
 
