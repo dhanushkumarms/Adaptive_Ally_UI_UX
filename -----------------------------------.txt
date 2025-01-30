@@ -1,0 +1,503 @@
+-------------------------------------------------------------------------------------
+1. Implementation of Remote Procedure Call (RPC)
+-------------------------------------------------------------------------------------
+
+:-$ rpcinfo
+
+:-$ sudo apt-get install rpcbind
+
+-------------------------------------------------------------------------------------
+add.x
+
+struct numbers{
+     int a;
+     int b;
+};
+
+program ADD_PROG{
+   version ADD_VERS{
+       int add(numbers)=1;
+   }=1;
+}=0x4562877;
+
+--------------------------------------------------------------------------------------
+
+rpcgen -a -C add.x
+
+add.h → Header file
+add_client.c → Client program
+add_clnt.c → Client stub
+add_server.c → Server program
+add_svc.c → Server skeleton
+add_xdr.c → XDR routines used by both client and server
+Makefile.add → Makefile for compilation
+
+--------------------------------------------------------------------------------------
+add_client.c
+
+#include "add.h"
+////////////////////////////////////////////////////////////////////////////////////////
+#include <stdio.h>
+#include <stdlib.h>
+///////////////////////////////////////////////////////////////////////////////////////
+void add_prog_1(char *host, int x, int y) {
+    CLIENT *clnt;
+    int *result_1;
+    numbers add_1_arg;
+
+#ifndef DEBUG
+    clnt = clnt_create(host, ADD_PROG, ADD_VERS, "udp");
+    if (clnt == NULL) {
+        clnt_pcreateerror(host);
+        exit(1);
+    }
+#endif /* DEBUG */
+///////////////////////////////////////////////////////////////////////////////////////
+##add_1_arg.a = x;##################################
+##add_1_arg.b = y;---------------------------------------------------------------
+///////////////////////////////////////////////////////////////////////////////////////
+    result_1 = add_1(&add_1_arg, clnt);
+    
+    if (result_1 == (int *) NULL) {
+        clnt_perror(clnt, "call failed");
+    } else {
+////////////////////////////////////////////////////////////////////////////////////////
+###printf("Result: %d\n", *result_1);#######################
+    }
+///////////////////////////////////////////////////////////////////////////////////////
+
+#ifndef DEBUG
+    clnt_destroy(clnt);
+#endif /* DEBUG */
+}
+
+int main(int argc, char *argv[]) {
+////////////////////////////////////////////////////////////////////////////////////////
+##if (argc < 4) {#####################################
+####printf("Usage: %s server_host number1 number2\n", argv[0]);#####
+        exit(1);
+    }
+##add_prog_1(argv[1], atoi(argv[2]), atoi(argv[3]));###############
+    exit(0);
+////////////////////////////////////////////////////////////////////////////////////////
+}
+
+
+---------------------------------------------------------------------------------------
+server.c 
+
+#include "add.h"
+#include <stdio.h>
+
+int *add_1_svc(numbers *argp, struct svc_req *rqstp) {
+    static int result;
+/////////////////////////////////////////////////////////////////////////////////////////
+##printf("add(%d, %d) is called\n", argp->a, argp->b);#############
+##result = argp->a + argp->b;############################
+    return &result;
+}
+////////////////////////////////////////////////////////////////////////////////////////
+
+---------------------------------------------------------------------------------------
+make -f Makefile.add
+
+sudo service rpcbind start
+
+./add_server
+
+./add_client localhost 5 8
+
+---------------------------------------------------------------------------------------
+2. IMPLEMENTATION OF ELECTION ALGORITHMS IN DC SYSTEMS
+---------------------------------------------------------------------------------------
+					1.BULLY ALGORITHM
+---------------------------------------------------------------------------------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
+#define MAX_NODES 10
+
+int processes[MAX_NODES];
+bool active[MAX_NODES];
+int coordinator;
+int n;
+
+void bullyElection(int initiator) {
+    int found = 0;
+    for (int i = 0; i < n; i++) {
+        if (processes[i] == initiator) {
+            found = 1;
+            if (!active[i]) {
+                printf("Process %d is crashed and cannot initiate an election.\n", initiator);
+                return;
+            }
+        }
+    }
+    if (!found) {
+        printf("Process %d not found.\n", initiator);
+        return;
+    }
+
+    int max_id = initiator;
+    for (int i = 0; i < n; i++) {
+        if (processes[i] > initiator && active[i]) {
+            printf("Process %d sends election message to Process %d\n", initiator, processes[i]);
+            max_id = (processes[i] > max_id) ? processes[i] : max_id;
+        }
+    }
+    coordinator = max_id;
+    printf("New Coordinator is Process %d\n", coordinator);
+}
+
+void crashProcess(int pid) {
+    for (int i = 0; i < n; i++) {
+        if (processes[i] == pid) {
+            active[i] = false;
+            printf("Process %d has crashed.\n", pid);
+            return;
+        }
+    }
+    printf("Process %d not found.\n", pid);
+}
+
+void recoverProcess(int pid) {
+    for (int i = 0; i < n; i++) {
+        if (processes[i] == pid) {
+            active[i] = true;
+            printf("Process %d has recovered.\n", pid);
+            bullyElection(pid);  // Triggers an election upon recovery
+            return;
+        }
+    }
+    printf("Process %d not found.\n", pid);
+}
+
+void displayProcesses() {
+    printf("Active Processes: ");
+    for (int i = 0; i < n; i++) {
+        if (active[i]) {
+            printf("%d ", processes[i]);
+        }
+    }
+    printf("\nCurrent Coordinator: %d\n", coordinator);
+}
+
+int main() {
+    int choice, initiator, pid;
+    printf("Enter number of processes: ");
+    scanf("%d", &n);
+    printf("Enter Process IDs: ");
+    for (int i = 0; i < n; i++) {
+        scanf("%d", &processes[i]);
+        active[i] = true;
+    }
+    coordinator = processes[n - 1];
+
+    while (1) {
+        printf("\nMenu:\n");
+        printf("1. Bully Election Algorithm\n");
+        printf("2. Crash a Process\n");
+        printf("3. Recover a Process\n");
+        printf("4. Display Processes and Coordinator\n");
+        printf("5. Exit\n");
+        printf("Enter choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1:
+                printf("Enter initiator process ID: ");
+                scanf("%d", &initiator);
+                bullyElection(initiator);
+                break;
+            case 2:
+                printf("Enter process ID to crash: ");
+                scanf("%d", &pid);
+                crashProcess(pid);
+                break;
+            case 3:
+                printf("Enter process ID to recover: ");
+                scanf("%d", &pid);
+                recoverProcess(pid);
+                break;
+            case 4:
+                displayProcesses();
+                break;
+            case 5:
+                exit(0);
+            default:
+                printf("Invalid choice!\n");
+        }
+    }
+    return 0;
+}
+
+---------------------------------------------------------------------------------------
+					2.RING ALGORITHM
+--------------------------------------------------------------------------------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
+#define MAX_NODES 10
+
+int processes[MAX_NODES];
+bool active[MAX_NODES];
+int n, coordinator;
+
+void ringElection(int initiator) {
+    if (!active[initiator - 1]) {
+        printf("Process %d is crashed and cannot initiate an election.\n", initiator);
+        return;
+    }
+
+    int temp[MAX_NODES], count = 0;
+    printf("Election initiated by Process %d\n", initiator);
+
+    int i = initiator - 1;
+    do {
+        if (active[i]) {
+            temp[count++] = processes[i];
+            printf("Process %d passes election message.\n", processes[i]);
+        }
+        i = (i + 1) % n;
+    } while (i != initiator - 1);
+
+    int new_coordinator = temp[0];
+    for (int j = 1; j < count; j++) {
+        if (temp[j] > new_coordinator)
+            new_coordinator = temp[j];
+    }
+
+    coordinator = new_coordinator;
+    printf("New Coordinator is Process %d\n", coordinator);
+}
+
+void crashProcess(int pid) {
+    for (int i = 0; i < n; i++) {
+        if (processes[i] == pid) {
+            active[i] = false;
+            printf("Process %d has crashed.\n", pid);
+            return;
+        }
+    }
+    printf("Process %d not found.\n", pid);
+}
+
+void recoverProcess(int pid) {
+    for (int i = 0; i < n; i++) {
+        if (processes[i] == pid) {
+            active[i] = true;
+            printf("Process %d has recovered.\n", pid);
+            ringElection(pid);
+            return;
+        }
+    }
+    printf("Process %d not found.\n", pid);
+}
+
+void displayProcesses() {
+    printf("Active Processes: ");
+    for (int i = 0; i < n; i++) {
+        if (active[i]) {
+            printf("%d ", processes[i]);
+        }
+    }
+    printf("\nCurrent Coordinator: %d\n", coordinator);
+}
+
+int main() {
+    int choice, initiator, pid;
+    printf("Enter number of processes: ");
+    scanf("%d", &n);
+    printf("Enter Process IDs: ");
+    for (int i = 0; i < n; i++) {
+        scanf("%d", &processes[i]);
+        active[i] = true;
+    }
+    coordinator = processes[n - 1];
+
+    while (1) {
+        printf("\nMenu:\n");
+        printf("1. Ring Election Algorithm\n");
+        printf("2. Crash a Process\n");
+        printf("3. Recover a Process\n");
+        printf("4. Display Processes and Coordinator\n");
+        printf("5. Exit\n");
+        printf("Enter choice: ");
+        scanf("%d", &choice);
+
+        switch (choice) {
+            case 1:
+                printf("Enter initiator process ID: ");
+                scanf("%d", &initiator);
+                ringElection(initiator);
+                break;
+            case 2:
+                printf("Enter process ID to crash: ");
+                scanf("%d", &pid);
+                crashProcess(pid);
+                break;
+            case 3:
+                printf("Enter process ID to recover: ");
+                scanf("%d", &pid);
+                recoverProcess(pid);
+                break;
+            case 4:
+                displayProcesses();
+                break;
+            case 5:
+                exit(0);
+            default:
+                printf("Invalid choice!\n");
+        }
+    }
+    return 0;
+}
+
+--------------------------------------------------------------------------------------
+3. IMPLEMENTATION OF DEADLOCK DETECTION ALGORITHMS 
+--------------------------------------------------------------------------------------
+					1. CENTRALIZED 
+--------------------------------------------------------------------------------------
+
+#include <stdio.h>
+#include <stdlib.h>
+
+#define MAX_PROCESSES 10
+
+int waitForGraph[MAX_PROCESSES][MAX_PROCESSES];
+
+int checkCycle(int node, int visited[], int stack[], int processes) {
+    visited[node] = 1;
+    stack[node] = 1;
+
+    for (int i = 0; i < processes; i++) {
+        if (waitForGraph[node][i]) {
+            if (!visited[i] && checkCycle(i, visited, stack, processes)) {
+                return 1;
+            } else if (stack[i]) {
+                return 1; // Cycle detected
+            }
+        }
+    }
+
+    stack[node] = 0;
+    return 0;
+}
+
+void centralizedDeadlockDetection(int processes) {
+    int visited[MAX_PROCESSES] = {0}, stack[MAX_PROCESSES] = {0};
+
+    for (int i = 0; i < processes; i++) {
+        if (!visited[i] && checkCycle(i, visited, stack, processes)) {
+            printf("Deadlock detected in the system.\n");
+            return;
+        }
+    }
+
+    printf("No deadlock detected.\n");
+}
+
+int main() {
+    int processes, edges;
+
+    printf("Enter number of processes: ");
+    scanf("%d", &processes);
+
+    printf("Enter number of edges in the wait-for graph: ");
+    scanf("%d", &edges);
+
+    printf("Enter edges (format: process1 process2):\n");
+    for (int i = 0; i < edges; i++) {
+        int from, to;
+        scanf("%d %d", &from, &to);
+        waitForGraph[from][to] = 1;
+    }
+
+    centralizedDeadlockDetection(processes);
+    return 0;
+}
+
+--------------------------------------------------------------------------------------
+					2.HIERARCHICAL
+-------------------------------------------------------------------------------------- 
+#include <stdio.h>
+#include <stdbool.h>
+#include <stdlib.h>
+
+#define MAX_PROCESSES 10
+
+bool detectDeadlockInRegion(int regionGraph[MAX_PROCESSES][MAX_PROCESSES], int numProcesses) {
+    bool visited[MAX_PROCESSES] = {false};
+    bool stack[MAX_PROCESSES] = {false};
+
+    for (int process = 0; process < numProcesses; process++) {
+        if (!visited[process]) {
+            int current = process;
+            while (true) {
+                if (!visited[current]) {
+                    visited[current] = true;
+                    stack[current] = true;
+                } else if (stack[current]) {
+                    return true;
+                } else {
+                    break;
+                }
+
+                int next = -1;
+                for (int j = 0; j < numProcesses; j++) {
+                    if (regionGraph[current][j] == 1) {
+                        next = j;
+                        break;
+                    }
+                }
+
+                if (next == -1) break;
+                current = next;
+            }
+
+            for (int i = 0; i < numProcesses; i++) stack[i] = false;
+        }
+    }
+    return false;
+}
+
+bool detectGlobalDeadlock(bool regionalDeadlocks[], int numRegions) {
+    for (int i = 0; i < numRegions; i++) {
+        if (regionalDeadlocks[i]) return true;
+    }
+    return false;
+}
+
+int main() {
+    int numRegions, numProcessesInRegion[MAX_PROCESSES];
+    int regionalGraph[MAX_PROCESSES][MAX_PROCESSES][MAX_PROCESSES];
+    bool regionalDeadlocks[MAX_PROCESSES];
+
+    printf("Enter the number of regions: ");
+    scanf("%d", &numRegions);
+
+    for (int region = 0; region < numRegions; region++) {
+        printf("\nEnter the number of processes in Region %d: ", region + 1);
+        scanf("%d", &numProcessesInRegion[region]);
+
+        printf("Enter the wait-for graph for Region %d (as adjacency matrix):\n", region + 1);
+        for (int i = 0; i < numProcessesInRegion[region]; i++) {
+            for (int j = 0; j < numProcessesInRegion[region]; j++) {
+                scanf("%d", &regionalGraph[region][i][j]);
+            }
+        }
+
+        regionalDeadlocks[region] = detectDeadlockInRegion(regionalGraph[region], numProcessesInRegion[region]);
+        printf("Deadlock in Region %d: %s\n", region + 1, regionalDeadlocks[region] ? "Yes" : "No");
+    }
+
+    bool globalDeadlock = detectGlobalDeadlock(regionalDeadlocks, numRegions);
+    printf("\nGlobal Deadlock: %s\n", globalDeadlock ? "Yes" : "No");
+
+    return 0;
+}
+
+--------------------------------------------------------------------------------------
+
